@@ -1,0 +1,107 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bia-trading-deployment
+  labels:
+    app: bia-trading
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: bia-trading
+  template:
+    metadata:
+      labels:
+        app: bia-trading
+    spec:
+      containers:
+      - name: bia-trading
+        image: gcr.io/PROJECT_ID/bia-trading:latest
+        ports:
+        - containerPort: 4173
+        env:
+        - name: NODE_ENV
+          value: "production"
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 4173
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 4173
+          initialDelaySeconds: 5
+          periodSeconds: 5
+      imagePullSecrets:
+      - name: gcr-json-key
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: bia-trading-service
+spec:
+  selector:
+    app: bia-trading
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 4173
+  type: LoadBalancer
+
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: bia-trading-ingress
+  annotations:
+    kubernetes.io/ingress.class: "gce"
+    kubernetes.io/ingress.global-static-ip-name: "bia-trading-ip"
+    kubernetes.io/ingress.allow-http: "true"
+spec:
+  rules:
+  - host: bia-trading.example.com
+    http:
+      paths:
+      - path: /*
+        pathType: ImplementationSpecific
+        backend:
+          service:
+            name: bia-trading-service
+            port:
+              number: 80
+
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: bia-trading-hpa
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: bia-trading-deployment
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80

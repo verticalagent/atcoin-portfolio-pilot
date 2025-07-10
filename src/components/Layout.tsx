@@ -12,7 +12,7 @@ interface LayoutProps {
 }
 
 export default function Layout({ children }: LayoutProps) {
-  const { user, logout } = useAuth();
+  const { user, profile, logout } = useAuth();
 
   const handleLogout = () => {
     logout();
@@ -46,17 +46,17 @@ export default function Layout({ children }: LayoutProps) {
                     <Button variant="ghost" className="flex items-center gap-2 h-10">
                       <Avatar className="h-8 w-8">
                         <AvatarFallback className="bg-primary/10 text-primary text-sm">
-                          {user?.name?.split(' ').map(n => n[0]).join('').slice(0, 2) || 'U'}
+                          {profile?.display_name?.split(' ').map(n => n[0]).join('').slice(0, 2) || 'U'}
                         </AvatarFallback>
                       </Avatar>
-                      <span className="text-sm font-medium hidden sm:inline">{user?.name}</span>
+                      <span className="text-sm font-medium hidden sm:inline">{profile?.display_name}</span>
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="w-56">
                     <DropdownMenuItem className="flex items-center gap-2">
                       <User className="h-4 w-4" />
                       <div className="flex flex-col">
-                        <span className="text-sm font-medium">{user?.name}</span>
+                        <span className="text-sm font-medium">{profile?.display_name}</span>
                         <span className="text-xs text-muted-foreground">{user?.email}</span>
                       </div>
                     </DropdownMenuItem>

@@ -40,16 +40,16 @@ export default function Login() {
     setLoading(true);
     setError('');
 
-    const success = await login(loginData.email, loginData.password);
+    const { error } = await login(loginData.email, loginData.password);
     
-    if (success) {
+    if (!error) {
       toast({
         title: "Login realizado com sucesso!",
         description: "Bem-vindo à plataforma BIA Trading.",
       });
       navigate('/');
     } else {
-      setError('Email ou senha inválidos');
+      setError(error.message || 'Email ou senha inválidos');
     }
     
     setLoading(false);
@@ -72,16 +72,16 @@ export default function Login() {
       return;
     }
 
-    const success = await register(registerData.name, registerData.email, registerData.password);
+    const { error } = await register(registerData.name, registerData.email, registerData.password);
     
-    if (success) {
+    if (!error) {
       toast({
         title: "Conta criada com sucesso!",
-        description: "Bem-vindo à plataforma BIA Trading.",
+        description: "Bem-vindo à plataforma BIA Trading. Verifique seu email para confirmar a conta.",
       });
       navigate('/');
     } else {
-      setError('Este email já está em uso');
+      setError(error.message || 'Erro ao criar conta');
     }
     
     setLoading(false);
@@ -89,8 +89,8 @@ export default function Login() {
 
   const fillDemoCredentials = () => {
     setLoginData({
-      email: 'admin@bia.com',
-      password: 'admin123'
+      email: 'demo@bia.com',
+      password: 'demo123456'
     });
   };
 
@@ -248,7 +248,7 @@ export default function Login() {
 
           <div className="mt-6 pt-4 border-t border-border text-center">
             <p className="text-xs text-muted-foreground">
-              Credenciais Demo: admin@bia.com / admin123
+              Credenciais Demo: demo@bia.com / demo123456
             </p>
           </div>
         </CardContent>
