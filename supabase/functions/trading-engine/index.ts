@@ -318,6 +318,15 @@ serve(async (req) => {
       case 'rebalancePortfolio':
         result = await engine.rebalancePortfolio();
         break;
+      case 'startBot':
+        result = await startBot(supabaseClient, user.id, params);
+        break;
+      case 'stopBot':
+        result = await stopBot(supabaseClient, user.id, params);
+        break;
+      case 'getBotStatus':
+        result = await getBotStatus(supabaseClient, user.id);
+        break;
       default:
         throw new Error(`Unknown action: ${action}`);
     }
@@ -333,3 +342,139 @@ serve(async (req) => {
     });
   }
 });
+
+async function startBot(supabaseClient: any, userId: string, params: any) {
+  try {
+    const { strategyId, interval = 300000 } = params; // Default 5 minutes
+    
+    // Verify strategy exists and is active
+    const { data: strategy } = await supabaseClient
+      .from('trading_strategies')
+      .select('*')
+      .eq('id', strategyId)
+      .eq('user_id', userId)
+      .single();
+
+    if (!strategy) {
+      throw new Error('Estratégia não encontrada');
+    }
+
+    // Update strategy to mark as bot-active
+    await supabaseClient
+      .from('trading_strategies')
+      .update({ 
+        is_active: true,
+        parameters: {
+          ...strategy.parameters,
+          bot_active: true,
+          bot_interval: interval,
+          bot_started_at: new Date().toISOString()
+        }
+      })
+      .eq('id', strategyId);
+
+    // Log bot start
+    await supabaseClient.from('system_logs').insert({
+      user_id: userId,
+      level: 'info',
+      message: `Bot iniciado para estratégia: ${strategy.name}`,
+      metadata: { 
+        strategy_id: strategyId,
+        interval,
+        action: 'bot_start'
+      }
+    });
+
+    return {
+      success: true,
+      message: `Bot iniciado com sucesso para ${strategy.name}`,
+      strategyId,
+      interval
+    };
+
+  } catch (error) {
+    console.error('Error starting bot:', error);
+    throw error;
+  }
+}
+
+async function stopBot(supabaseClient: any, userId: string, params: any) {
+  try {
+    const { strategyId } = params;
+    
+    // Get strategy
+    const { data: strategy } = await supabaseClient
+      .from('trading_strategies')
+      .select('*')
+      .eq('id', strategyId)
+      .eq('user_id', userId)
+      .single();
+
+    if (!strategy) {
+      throw new Error('Estratégia não encontrada');
+    }
+
+    // Update strategy to stop bot
+    await supabaseClient
+      .from('trading_strategies')
+      .update({ 
+        parameters: {
+          ...strategy.parameters,
+          bot_active: false,
+          bot_stopped_at: new Date().toISOString()
+        }
+      })
+      .eq('id', strategyId);
+
+    // Log bot stop
+    await supabaseClient.from('system_logs').insert({
+      user_id: userId,
+      level: 'info',
+      message: `Bot parado para estratégia: ${strategy.name}`,
+      metadata: { 
+        strategy_id: strategyId,
+        action: 'bot_stop'
+      }
+    });
+
+    return {
+      success: true,
+      message: `Bot parado com sucesso para ${strategy.name}`,
+      strategyId
+    };
+
+  } catch (error) {
+    console.error('Error stopping bot:', error);
+    throw error;
+  }
+}
+
+async function getBotStatus(supabaseClient: any, userId: string) {
+  try {
+    // Get all strategies with bot status
+    const { data: strategies } = await supabaseClient
+      .from('trading_strategies')
+      .select('*')
+      .eq('user_id', userId);
+
+    const botStatus = strategies.map((strategy: any) => ({
+      strategyId: strategy.id,
+      name: strategy.name,
+      isActive: strategy.is_active,
+      botActive: strategy.parameters?.bot_active || false,
+      botStartedAt: strategy.parameters?.bot_started_at,
+      botStoppedAt: strategy.parameters?.bot_stopped_at,
+      interval: strategy.parameters?.bot_interval || 300000
+    }));
+
+    return {
+      botStatus,
+      activeBots: botStatus.filter(bot => bot.botActive).length,
+      totalStrategies: strategies.length
+    };
+
+  } catch (error) {
+    console.error('Error getting bot status:', error);
+    throw error;
+  }
+}

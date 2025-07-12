@@ -15,32 +15,30 @@ interface BinanceConfig {
 
 class BinanceService {
   private config: BinanceConfig;
-  private baseUrl: string;
+  public baseUrl: string;
 
   constructor(config: BinanceConfig) {
     this.config = config;
     this.baseUrl = config.testnet ? 'https://testnet.binance.vision' : 'https://api.binance.com';
   }
 
-  private generateSignature(queryString: string): string {
-    const crypto = globalThis.crypto;
+  private async generateSignature(queryString: string): Promise<string> {
     const encoder = new TextEncoder();
     const key = encoder.encode(this.config.apiSecret);
     const data = encoder.encode(queryString);
     
-    return crypto.subtle.importKey(
+    const cryptoKey = await crypto.subtle.importKey(
       'raw',
       key,
       { name: 'HMAC', hash: 'SHA-256' },
       false,
       ['sign']
-    ).then(cryptoKey => 
-      crypto.subtle.sign('HMAC', cryptoKey, data)
-    ).then(signature => 
-      Array.from(new Uint8Array(signature))
-        .map(b => b.toString(16).padStart(2, '0'))
-        .join('')
     );
+    
+    const signature = await crypto.subtle.sign('HMAC', cryptoKey, data);
+    return Array.from(new Uint8Array(signature))
+      .map(b => b.toString(16).padStart(2, '0'))
+      .join('');
   }
 
   async getAccountInfo() {
@@ -53,6 +51,10 @@ class BinanceService {
         'X-MBX-APIKEY': this.config.apiKey,
       },
     });
+    
+    if (!response.ok) {
+      throw new Error(`Binance API error: ${response.status}`);
+    }
     
     return response.json();
   }
@@ -100,6 +102,71 @@ class BinanceService {
   }
 }
 
+async function syncPortfolio(binanceService: BinanceService, supabaseClient: any, userId: string) {
+  try {
+    // Get account info from Binance
+    const accountInfo = await binanceService.getAccountInfo();
+    
+    // Get current prices for all symbols
+    const pricesResponse = await fetch(`${binanceService.baseUrl}/api/v3/ticker/price`);
+    const pricesData = await pricesResponse.json();
+    const pricesMap = Object.fromEntries(pricesData.map((p: any) => [p.symbol, parseFloat(p.price)]));
+    
+    // Process balances
+    const portfolio = accountInfo.balances
+      .filter((balance: any) => parseFloat(balance.free) > 0 || parseFloat(balance.locked) > 0)
+      .map((balance: any) => {
+        const totalQuantity = parseFloat(balance.free) + parseFloat(balance.locked);
+        const symbol = balance.asset === 'USDT' ? 'USDT' : `${balance.asset}USDT`;
+        const currentPrice = pricesMap[symbol] || (balance.asset === 'USDT' ? 1 : 0);
+        const totalValue = totalQuantity * currentPrice;
+        
+        return {
+          user_id: userId,
+          symbol: balance.asset,
+          quantity: totalQuantity,
+          avg_price: currentPrice,
+          current_price: currentPrice,
+          total_value: totalValue,
+          pnl_percentage: 0, // Would need historical data for real PnL
+          last_updated: new Date().toISOString(),
+        };
+      })
+      .filter((item: any) => item.total_value > 1); // Filter dust
+
+    // Update database
+    for (const item of portfolio) {
+      await supabaseClient
+        .from('portfolio')
+        .upsert(item, { onConflict: 'user_id,symbol' });
+    }
+
+    // Update price history for major symbols
+    const majorSymbols = ['BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'ADAUSDT', 'SOLUSDT'];
+    for (const symbol of majorSymbols) {
+      if (pricesMap[symbol]) {
+        await supabaseClient
+          .from('price_history')
+          .insert({
+            symbol: symbol.replace('USDT', ''),
+            price: pricesMap[symbol],
+            timestamp: new Date().toISOString(),
+          });
+      }
+    }
+
+    return {
+      portfolio,
+      totalValue: portfolio.reduce((sum: number, item: any) => sum + item.total_value, 0),
+      timestamp: new Date().toISOString()
+    };
+
+  } catch (error) {
+    console.error('Error syncing portfolio:', error);
+    throw error;
+  }
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -137,7 +204,7 @@ serve(async (req) => {
       .single();
 
     if (!apiKeys) {
-      throw new Error('Binance API keys not configured');
+      throw new Error('Chaves API da Binance não configuradas. Por favor, configure suas chaves primeiro.');
     }
 
     const binanceService = new BinanceService({
@@ -150,6 +217,9 @@ serve(async (req) => {
     switch (action) {
       case 'getAccountInfo':
         result = await binanceService.getAccountInfo();
+        break;
+      case 'getPortfolio':
+        result = await syncPortfolio(binanceService, supabaseClient, user.id);
         break;
       case 'getPrice':
         result = await binanceService.getSymbolPrice(params.symbol);
@@ -173,7 +243,7 @@ serve(async (req) => {
         });
         break;
       default:
-        throw new Error(`Unknown action: ${action}`);
+        throw new Error(`Ação desconhecida: ${action}`);
     }
 
     return new Response(JSON.stringify(result), {

@@ -1,274 +1,245 @@
-import Layout from "@/components/Layout";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Slider } from "@/components/ui/slider";
-import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
-import { Bot, Play, Pause, Settings, Activity, Zap, Target, AlertTriangle, CheckCircle } from "lucide-react";
-import { useState } from "react";
-import { useToast } from "@/hooks/use-toast";
+import React, { useState, useEffect } from 'react';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
+import { useTradingStrategies, usePortfolio } from '@/hooks/useTradingData';
+import { useToast } from '@/hooks/use-toast';
+import { 
+  Play, 
+  Pause, 
+  RefreshCw, 
+  Bot as BotIcon, 
+  DollarSign,
+  AlertTriangle,
+  Activity
+} from 'lucide-react';
 
-export default function BotPage() {
-  const [botActive, setBotActive] = useState(false);
-  const [riskLevel, setRiskLevel] = useState([3]);
-  const [rebalanceFreq, setRebalanceFreq] = useState([6]);
-  const [autoRebalance, setAutoRebalance] = useState(true);
-  const [stopLoss, setStopLoss] = useState(true);
+export default function Bot() {
+  const { user } = useAuth();
+  const { strategies, loading: strategiesLoading } = useTradingStrategies();
+  const { portfolio, loading: portfolioLoading, refetch: refetchPortfolio } = usePortfolio();
+  const [botStatus, setBotStatus] = useState<any[]>([]);
+  const [isLoadingPortfolio, setIsLoadingPortfolio] = useState(false);
   const { toast } = useToast();
 
-  const handleBotToggle = () => {
-    setBotActive(!botActive);
-    toast({
-      title: botActive ? "Bot Pausado" : "Bot Iniciado",
-      description: botActive 
-        ? "O trading bot foi pausado com sucesso." 
-        : "O trading bot está agora ativo e monitorando o mercado.",
-    });
+  useEffect(() => {
+    if (user) {
+      fetchBotStatus();
+    }
+  }, [user]);
+
+  const fetchBotStatus = async () => {
+    try {
+      const { data, error } = await supabase.functions.invoke('trading-engine', {
+        body: { action: 'getBotStatus' }
+      });
+      if (error) throw error;
+      setBotStatus(data.botStatus || []);
+    } catch (error) {
+      console.error('Error fetching bot status:', error);
+    }
   };
 
-  const botMetrics = [
-    { label: "Trades Executados", value: "47", period: "últimos 7 dias" },
-    { label: "Taxa de Sucesso", value: "78%", period: "histórico" },
-    { label: "Retorno Médio", value: "+2.4%", period: "por trade" },
-    { label: "Tempo Ativo", value: "72h", period: "esta semana" }
-  ];
+  const loadPortfolio = async () => {
+    setIsLoadingPortfolio(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('binance-service', {
+        body: { action: 'getPortfolio' }
+      });
+      if (error) throw error;
+      await refetchPortfolio();
+      toast({
+        title: 'Portfólio Atualizado',
+        description: `Sincronizado com sucesso da Binance`,
+      });
+    } catch (error) {
+      toast({
+        title: 'Erro',
+        description: error.message || 'Falha ao carregar portfólio da Binance.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsLoadingPortfolio(false);
+    }
+  };
 
-  const nextActions = [
-    { time: "Em 2h 15min", action: "Rebalanceamento automático", status: "scheduled" },
-    { time: "Em 4h 30min", action: "Análise de mercado", status: "scheduled" },
-    { time: "Em 6h 00min", action: "Revisão de portfólio", status: "scheduled" },
-  ];
+  const startBot = async (strategyId: string) => {
+    try {
+      const { data, error } = await supabase.functions.invoke('trading-engine', {
+        body: { action: 'startBot', strategyId, interval: 300000 }
+      });
+      if (error) throw error;
+      toast({ title: 'Bot Iniciado', description: data.message });
+      fetchBotStatus();
+    } catch (error) {
+      toast({ title: 'Erro', description: 'Falha ao iniciar bot.', variant: 'destructive' });
+    }
+  };
+
+  const stopBot = async (strategyId: string) => {
+    try {
+      const { data, error } = await supabase.functions.invoke('trading-engine', {
+        body: { action: 'stopBot', strategyId }
+      });
+      if (error) throw error;
+      toast({ title: 'Bot Parado', description: data.message });
+      fetchBotStatus();
+    } catch (error) {
+      toast({ title: 'Erro', description: 'Falha ao parar bot.', variant: 'destructive' });
+    }
+  };
+
+  const activeBots = botStatus.filter(bot => bot.botActive).length;
+  const totalPortfolioValue = portfolio.reduce((sum, item) => sum + item.total_value, 0);
+
+  if (strategiesLoading || portfolioLoading) {
+    return <div className="p-6">Carregando...</div>;
+  }
 
   return (
-    <Layout>
-      <div className="max-w-6xl mx-auto space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold">Trading Bot</h1>
-            <p className="text-muted-foreground mt-2">
-              Configure e monitore seu bot de trading autônomo
-            </p>
-          </div>
-          
-          <Button
-            onClick={handleBotToggle}
-            size="lg"
-            variant={botActive ? "destructive" : "default"}
-            className="px-8"
-          >
-            {botActive ? (
-              <>
-                <Pause className="w-5 h-5 mr-2" />
-                Pausar Bot
-              </>
-            ) : (
-              <>
-                <Play className="w-5 h-5 mr-2" />
-                Iniciar Bot
-              </>
-            )}
-          </Button>
+    <div className="space-y-6">
+      <div className="flex justify-between items-center">
+        <div>
+          <h1 className="text-3xl font-bold flex items-center gap-2">
+            <BotIcon className="h-8 w-8" />
+            Trading Bot
+          </h1>
+          <p className="text-muted-foreground">
+            Controle e monitore seus bots de trading automatizados
+          </p>
         </div>
+        
+        <Button onClick={loadPortfolio} disabled={isLoadingPortfolio}>
+          <RefreshCw className={`mr-2 h-4 w-4 ${isLoadingPortfolio ? 'animate-spin' : ''}`} />
+          Sincronizar Binance
+        </Button>
+      </div>
 
-        {/* Status do Bot */}
-        <Card className="border-border bg-card/50">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Bot className="w-5 h-5" />
-              Status do Sistema
-            </CardTitle>
+      <div className="grid gap-4 md:grid-cols-3">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Bots Ativos</CardTitle>
+            <Activity className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="flex items-center justify-between mb-6">
-              <div>
-                <div className="flex items-center gap-3 mb-2">
-                  <div className={`w-3 h-3 rounded-full ${botActive ? 'bg-success animate-pulse' : 'bg-muted'}`} />
-                  <span className="text-lg font-medium">
-                    {botActive ? "Bot Ativo" : "Bot Inativo"}
-                  </span>
-                  <Badge variant={botActive ? "default" : "secondary"}>
-                    {botActive ? "Online" : "Offline"}
-                  </Badge>
-                </div>
-                <p className="text-sm text-muted-foreground">
-                  {botActive 
-                    ? "Monitorando mercado e executando estratégias" 
-                    : "Aguardando ativação para iniciar operações"
-                  }
-                </p>
-              </div>
-
-              {botActive && (
-                <div className="text-right">
-                  <div className="flex items-center gap-2 mb-1">
-                    <Zap className="w-4 h-4 text-primary" />
-                    <span className="text-sm font-medium text-primary">Próxima ação</span>
-                  </div>
-                  <p className="text-sm text-muted-foreground">Rebalanceamento em 2h 15min</p>
-                </div>
-              )}
-            </div>
-
-            <div className="grid gap-4 md:grid-cols-4">
-              {botMetrics.map((metric, index) => (
-                <div key={index} className="p-3 bg-muted/20 rounded-lg">
-                  <div className="text-xl font-bold">{metric.value}</div>
-                  <div className="text-sm font-medium">{metric.label}</div>
-                  <div className="text-xs text-muted-foreground">{metric.period}</div>
-                </div>
-              ))}
-            </div>
+            <div className="text-2xl font-bold">{activeBots}</div>
+            <p className="text-xs text-muted-foreground">de {strategies.length} estratégias</p>
           </CardContent>
         </Card>
 
-        <div className="grid gap-6 md:grid-cols-2">
-          {/* Configurações do Bot */}
-          <Card className="border-border bg-card/50">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Settings className="w-5 h-5" />
-                Configurações do Bot
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="space-y-3">
-                <Label>Nível de Risco: {riskLevel[0]}/5</Label>
-                <Slider
-                  value={riskLevel}
-                  onValueChange={setRiskLevel}
-                  max={5}
-                  min={1}
-                  step={1}
-                  className="w-full"
-                />
-                <div className="flex justify-between text-xs text-muted-foreground">
-                  <span>Conservador</span>
-                  <span>Agressivo</span>
-                </div>
-              </div>
-
-              <div className="space-y-3">
-                <Label>Frequência de Rebalanceamento: {rebalanceFreq[0]}h</Label>
-                <Slider
-                  value={rebalanceFreq}
-                  onValueChange={setRebalanceFreq}
-                  max={24}
-                  min={1}
-                  step={1}
-                  className="w-full"
-                />
-                <div className="flex justify-between text-xs text-muted-foreground">
-                  <span>1 hora</span>
-                  <span>24 horas</span>
-                </div>
-              </div>
-
-              <div className="space-y-4 pt-4 border-t border-border">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <Label>Rebalanceamento Automático</Label>
-                    <p className="text-sm text-muted-foreground">
-                      Executar trades automaticamente
-                    </p>
-                  </div>
-                  <Switch checked={autoRebalance} onCheckedChange={setAutoRebalance} />
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <div>
-                    <Label>Stop Loss Inteligente</Label>
-                    <p className="text-sm text-muted-foreground">
-                      Proteção contra perdas excessivas
-                    </p>
-                  </div>
-                  <Switch checked={stopLoss} onCheckedChange={setStopLoss} />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Próximas Ações */}
-          <Card className="border-border bg-card/50">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Activity className="w-5 h-5" />
-                Próximas Ações
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-3">
-                {nextActions.map((action, index) => (
-                  <div key={index} className="flex items-center gap-3 p-3 bg-muted/20 rounded-lg">
-                    <div className="w-2 h-2 bg-primary rounded-full animate-pulse" />
-                    <div className="flex-1">
-                      <p className="font-medium text-sm">{action.action}</p>
-                      <p className="text-xs text-muted-foreground">{action.time}</p>
-                    </div>
-                    <Badge variant="outline" className="text-xs">
-                      Agendado
-                    </Badge>
-                  </div>
-                ))}
-              </div>
-
-              {!botActive && (
-                <div className="mt-4 p-3 bg-warning/10 rounded-lg border border-warning/20">
-                  <div className="flex items-center gap-2">
-                    <AlertTriangle className="w-4 h-4 text-warning" />
-                    <span className="text-sm text-warning font-medium">
-                      Bot inativo - Nenhuma ação será executada
-                    </span>
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Estratégia Atual */}
-        <Card className="border-border bg-card/50">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Target className="w-5 h-5" />
-              Estratégia Atual
-            </CardTitle>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Valor Total</CardTitle>
+            <DollarSign className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="grid gap-4 md:grid-cols-3">
-              <div className="p-4 bg-primary/5 rounded-lg border border-primary/20">
-                <div className="flex items-center gap-2 mb-2">
-                  <CheckCircle className="w-4 h-4 text-primary" />
-                  <span className="font-medium text-primary">Rebalanceamento por IA</span>
-                </div>
-                <p className="text-sm text-muted-foreground">
-                  Utiliza inteligência artificial da ATCoin para otimizar alocação de ativos
-                </p>
-              </div>
+            <div className="text-2xl font-bold">${totalPortfolioValue.toFixed(2)}</div>
+            <p className="text-xs text-muted-foreground">Portfólio atual</p>
+          </CardContent>
+        </Card>
 
-              <div className="p-4 bg-chart-blue/5 rounded-lg border border-chart-blue/20">
-                <div className="flex items-center gap-2 mb-2">
-                  <CheckCircle className="w-4 h-4 text-chart-blue" />
-                  <span className="font-medium text-chart-blue">Análise Técnica</span>
-                </div>
-                <p className="text-sm text-muted-foreground">
-                  Considera indicadores técnicos e padrões de mercado
-                </p>
-              </div>
-
-              <div className="p-4 bg-success/5 rounded-lg border border-success/20">
-                <div className="flex items-center gap-2 mb-2">
-                  <CheckCircle className="w-4 h-4 text-success" />
-                  <span className="font-medium text-success">Gestão de Risco</span>
-                </div>
-                <p className="text-sm text-muted-foreground">
-                  Controle automático de risco com stop loss inteligente
-                </p>
-              </div>
-            </div>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Ativos</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{portfolio.length}</div>
+            <p className="text-xs text-muted-foreground">Diferentes moedas</p>
           </CardContent>
         </Card>
       </div>
-    </Layout>
+
+      <Tabs defaultValue="bots" className="space-y-4">
+        <TabsList>
+          <TabsTrigger value="bots">Controle de Bots</TabsTrigger>
+          <TabsTrigger value="portfolio">Portfólio</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="bots" className="space-y-4">
+          {strategies.length === 0 ? (
+            <Alert>
+              <AlertTriangle className="h-4 w-4" />
+              <AlertDescription>
+                Nenhuma estratégia encontrada. Crie uma estratégia primeiro para usar o bot.
+              </AlertDescription>
+            </Alert>
+          ) : (
+            <div className="grid gap-4">
+              {strategies.map((strategy) => {
+                const status = botStatus.find(s => s.strategyId === strategy.id);
+                const isRunning = status?.botActive || false;
+                
+                return (
+                  <Card key={strategy.id}>
+                    <CardHeader>
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <CardTitle className="flex items-center gap-2">
+                            {strategy.name}
+                            <Badge variant={strategy.is_active ? "default" : "secondary"}>
+                              {strategy.is_active ? 'Ativo' : 'Inativo'}
+                            </Badge>
+                            {isRunning && (
+                              <Badge variant="outline" className="text-green-600 border-green-600">
+                                <Activity className="w-3 h-3 mr-1" />
+                                Bot Rodando
+                              </Badge>
+                            )}
+                          </CardTitle>
+                          <CardDescription>{strategy.description}</CardDescription>
+                        </div>
+                        
+                        <div className="flex items-center gap-2">
+                          {isRunning ? (
+                            <Button variant="destructive" size="sm" onClick={() => stopBot(strategy.id)}>
+                              <Pause className="h-4 w-4 mr-2" />
+                              Parar Bot
+                            </Button>
+                          ) : (
+                            <Button onClick={() => startBot(strategy.id)} disabled={!strategy.is_active} size="sm">
+                              <Play className="h-4 w-4 mr-2" />
+                              Iniciar Bot
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    </CardHeader>
+                  </Card>
+                );
+              })}
+            </div>
+          )}
+        </TabsContent>
+
+        <TabsContent value="portfolio" className="space-y-4">
+          <div className="grid gap-4">
+            {portfolio.map((item) => (
+              <Card key={item.id}>
+                <CardContent className="p-6">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="font-semibold text-lg">{item.symbol}</h3>
+                      <p className="text-sm text-muted-foreground">
+                        Quantidade: {item.quantity.toFixed(6)}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-lg font-bold">${item.total_value.toFixed(2)}</div>
+                      <div className="text-sm text-muted-foreground">
+                        @${item.current_price.toFixed(6)}
+                      </div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </TabsContent>
+      </Tabs>
+    </div>
   );
 }
