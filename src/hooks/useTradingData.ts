@@ -1,45 +1,11 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
+import { Tables } from '@/integrations/supabase/types';
 
-export interface TradingStrategy {
-  id: string;
-  name: string;
-  description?: string;
-  strategy_type: string;
-  parameters: Record<string, any>;
-  is_active: boolean;
-  risk_level: string;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface PortfolioItem {
-  id: string;
-  symbol: string;
-  quantity: number;
-  avg_price: number;
-  current_price: number;
-  total_value: number;
-  pnl_percentage: number;
-  last_updated: string;
-}
-
-export interface TradingOrder {
-  id: string;
-  strategy_id?: string;
-  exchange: string;
-  symbol: string;
-  side: 'buy' | 'sell';
-  order_type: 'market' | 'limit' | 'stop';
-  quantity: number;
-  price?: number;
-  status: 'pending' | 'filled' | 'cancelled';
-  external_order_id?: string;
-  created_at: string;
-  filled_at?: string;
-  cancelled_at?: string;
-}
+export type TradingStrategy = Tables<'trading_strategies'>;
+export type PortfolioItem = Tables<'portfolio'>;
+export type TradingOrder = Tables<'trading_orders'>;
 
 export const useTradingStrategies = () => {
   const [strategies, setStrategies] = useState<TradingStrategy[]>([]);
@@ -70,15 +36,20 @@ export const useTradingStrategies = () => {
 
   const createStrategy = async (strategy: Omit<TradingStrategy, 'id' | 'created_at' | 'updated_at'>) => {
     try {
+      if (!user?.id) throw new Error('User not authenticated');
+      
       const { data, error } = await supabase
         .from('trading_strategies')
-        .insert([strategy])
+        .insert([{
+          ...strategy,
+          user_id: user.id
+        }])
         .select()
         .single();
 
       if (error) throw error;
-      setStrategies(prev => [data, ...prev]);
-      return data;
+      setStrategies(prev => [data as TradingStrategy, ...prev]);
+      return data as TradingStrategy;
     } catch (error) {
       console.error('Error creating strategy:', error);
       throw error;
@@ -95,8 +66,8 @@ export const useTradingStrategies = () => {
         .single();
 
       if (error) throw error;
-      setStrategies(prev => prev.map(s => s.id === id ? data : s));
-      return data;
+      setStrategies(prev => prev.map(s => s.id === id ? data as TradingStrategy : s));
+      return data as TradingStrategy;
     } catch (error) {
       console.error('Error updating strategy:', error);
       throw error;
@@ -191,15 +162,20 @@ export const useTradingOrders = () => {
 
   const createOrder = async (order: Omit<TradingOrder, 'id' | 'created_at' | 'filled_at' | 'cancelled_at'>) => {
     try {
+      if (!user?.id) throw new Error('User not authenticated');
+      
       const { data, error } = await supabase
         .from('trading_orders')
-        .insert([order])
+        .insert([{
+          ...order,
+          user_id: user.id
+        }])
         .select()
         .single();
 
       if (error) throw error;
-      setOrders(prev => [data, ...prev]);
-      return data;
+      setOrders(prev => [data as TradingOrder, ...prev]);
+      return data as TradingOrder;
     } catch (error) {
       console.error('Error creating order:', error);
       throw error;

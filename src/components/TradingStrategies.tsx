@@ -34,13 +34,17 @@ export default function TradingStrategies() {
 
   const handleCreateStrategy = async () => {
     try {
-      await createStrategy(newStrategy);
+      await createStrategy({
+        ...newStrategy,
+        user_id: '' // This will be set in the hook
+      });
       setIsCreateOpen(false);
       setNewStrategy({
         name: '',
         description: '',
         strategy_type: 'sma_crossover',
         risk_level: 'medium',
+        is_active: false,
         parameters: {
           symbols: ['BTCUSDT', 'ETHUSDT'],
           min_confidence: 70,
@@ -287,16 +291,16 @@ export default function TradingStrategies() {
                 <div>
                   <span className="text-muted-foreground">Símbolos:</span>
                   <p className="font-medium">
-                    {strategy.parameters.symbols?.join(', ') || 'N/A'}
+                    {(strategy.parameters as any)?.symbols?.join(', ') || 'N/A'}
                   </p>
                 </div>
                 <div>
                   <span className="text-muted-foreground">Confiança Mín.:</span>
-                  <p className="font-medium">{strategy.parameters.min_confidence || 70}%</p>
+                  <p className="font-medium">{(strategy.parameters as any)?.min_confidence || 70}%</p>
                 </div>
                 <div>
                   <span className="text-muted-foreground">Risco Máx.:</span>
-                  <p className="font-medium">{((strategy.parameters.max_risk_per_trade || 0.02) * 100).toFixed(1)}%</p>
+                  <p className="font-medium">{(((strategy.parameters as any)?.max_risk_per_trade || 0.02) * 100).toFixed(1)}%</p>
                 </div>
               </div>
             </div>
