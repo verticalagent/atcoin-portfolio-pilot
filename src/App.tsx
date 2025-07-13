@@ -10,6 +10,8 @@ import Settings from "./pages/Settings";
 import Logs from "./pages/Logs";
 import Portfolio from "./pages/Portfolio";
 import Bot from "./pages/Bot";
+import Analytics from "./pages/Analytics";
+import Transactions from "./pages/Transactions";
 import Login from "./pages/Login";
 import NotFound from "./pages/NotFound";
 
@@ -27,6 +29,8 @@ const App = () => (
             <Route path="/" element={<ProtectedRoute><Index /></ProtectedRoute>} />
             <Route path="/portfolio" element={<ProtectedRoute><Portfolio /></ProtectedRoute>} />
             <Route path="/bot" element={<ProtectedRoute><Bot /></ProtectedRoute>} />
+            <Route path="/analytics" element={<ProtectedRoute><Analytics /></ProtectedRoute>} />
+            <Route path="/transactions" element={<ProtectedRoute><Transactions /></ProtectedRoute>} />
             <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
             <Route path="/logs" element={<ProtectedRoute><Logs /></ProtectedRoute>} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
