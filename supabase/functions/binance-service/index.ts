@@ -194,27 +194,50 @@ serve(async (req) => {
 
     const { action, ...params } = await req.json();
 
-    // Get user's Binance API keys
-    const { data: apiKeys } = await supabaseClient
-      .from('api_keys')
-      .select('*')
-      .eq('user_id', user.id)
-      .eq('exchange', 'binance')
-      .eq('is_active', true)
-      .single();
+    let binanceService: BinanceService;
+    
+    if (action === 'test-connection') {
+      // For test connection, use provided credentials
+      if (!params.apiKey || !params.apiSecret) {
+        throw new Error('API credentials are required for testing');
+      }
+      binanceService = new BinanceService({
+        apiKey: params.apiKey,
+        apiSecret: params.apiSecret,
+        testnet: true,
+      });
+    } else {
+      // For other actions, get saved credentials
+      const { data: apiKeys } = await supabaseClient
+        .from('api_keys')
+        .select('*')
+        .eq('user_id', user.id)
+        .eq('exchange', 'binance')
+        .eq('is_active', true)
+        .single();
 
-    if (!apiKeys) {
-      throw new Error('Chaves API da Binance não configuradas. Por favor, configure suas chaves primeiro.');
+      if (!apiKeys) {
+        throw new Error('Chaves API da Binance não configuradas. Por favor, configure suas chaves primeiro.');
+      }
+
+      binanceService = new BinanceService({
+        apiKey: apiKeys.api_key_encrypted, // In production, decrypt these
+        apiSecret: apiKeys.api_secret_encrypted,
+        testnet: true, // Use testnet for safety
+      });
     }
-
-    const binanceService = new BinanceService({
-      apiKey: apiKeys.api_key_encrypted, // In production, decrypt these
-      apiSecret: apiKeys.api_secret_encrypted,
-      testnet: true, // Use testnet for safety
-    });
 
     let result;
     switch (action) {
+      case 'test-connection':
+        // Simple test - just get account info to verify credentials
+        try {
+          await binanceService.getAccountInfo();
+          result = { success: true, message: 'Conexão bem-sucedida' };
+        } catch (error) {
+          throw new Error('Credenciais inválidas ou erro na conexão');
+        }
+        break;
       case 'getAccountInfo':
         result = await binanceService.getAccountInfo();
         break;

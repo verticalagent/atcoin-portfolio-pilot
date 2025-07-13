@@ -5,12 +5,16 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
-import { useState } from "react";
-import { Eye, EyeOff, Key, Bot, AlertTriangle, CheckCircle } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Eye, EyeOff, Key, Bot, AlertTriangle, CheckCircle, ArrowLeft } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useNavigate } from "react-router-dom";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
 
 export default function Settings() {
   const [showApiKeys, setShowApiKeys] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
     atcoinApiUrl: "https://your-atcoin-api.herokuapp.com",
     atcoinApiKey: "",
@@ -23,34 +27,131 @@ export default function Settings() {
   });
   const [isConnected, setIsConnected] = useState(false);
   const { toast } = useToast();
+  const navigate = useNavigate();
+  const { user } = useAuth();
 
-  const handleSave = () => {
-    // Simular salvamento das configurações
-    toast({
-      title: "Configurações salvas",
-      description: "Suas configurações foram salvas com sucesso.",
-    });
-    setIsConnected(true);
-  };
+  // Carregar configurações existentes
+  useEffect(() => {
+    const loadSettings = async () => {
+      if (!user) return;
+      
+      try {
+        const { data: apiKeys } = await supabase
+          .from('api_keys')
+          .select('*')
+          .eq('user_id', user.id);
 
-  const testConnection = () => {
-    // Simular teste de conexão
-    toast({
-      title: "Testando conexões...",
-      description: "Verificando conectividade com APIs.",
-    });
+        if (apiKeys && apiKeys.length > 0) {
+          const binanceKey = apiKeys.find(key => key.exchange === 'binance');
+          if (binanceKey) {
+            setFormData(prev => ({
+              ...prev,
+              binanceApiKey: binanceKey.api_key_encrypted,
+              binanceApiSecret: binanceKey.api_secret_encrypted
+            }));
+            setIsConnected(true);
+          }
+        }
+      } catch (error) {
+        console.error('Erro ao carregar configurações:', error);
+      }
+    };
+
+    loadSettings();
+  }, [user]);
+
+  const handleSave = async () => {
+    if (!user) return;
     
-    setTimeout(() => {
+    setLoading(true);
+    try {
+      // Salvar chaves da Binance
+      if (formData.binanceApiKey && formData.binanceApiSecret) {
+        const { error } = await supabase
+          .from('api_keys')
+          .upsert({
+            user_id: user.id,
+            exchange: 'binance',
+            api_key_encrypted: formData.binanceApiKey,
+            api_secret_encrypted: formData.binanceApiSecret,
+            is_active: true
+          }, {
+            onConflict: 'user_id,exchange'
+          });
+
+        if (error) throw error;
+      }
+
       toast({
-        title: "Conexões testadas",
-        description: "Todas as APIs estão respondendo corretamente.",
+        title: "Configurações salvas",
+        description: "Suas configurações foram salvas com sucesso.",
       });
       setIsConnected(true);
-    }, 2000);
+    } catch (error) {
+      toast({
+        title: "Erro ao salvar",
+        description: "Erro ao salvar as configurações. Tente novamente.",
+        variant: "destructive"
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const testConnection = async () => {
+    if (!formData.binanceApiKey || !formData.binanceApiSecret) {
+      toast({
+        title: "Chaves obrigatórias",
+        description: "Configure as chaves da API antes de testar.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const { data } = await supabase.functions.invoke('binance-service', {
+        body: { 
+          action: 'test-connection',
+          apiKey: formData.binanceApiKey,
+          apiSecret: formData.binanceApiSecret
+        }
+      });
+
+      if (data?.success) {
+        toast({
+          title: "Conexão bem-sucedida",
+          description: "Todas as APIs estão respondendo corretamente.",
+        });
+        setIsConnected(true);
+      } else {
+        throw new Error(data?.error || 'Erro na conexão');
+      }
+    } catch (error) {
+      toast({
+        title: "Erro na conexão",
+        description: "Verifique suas credenciais e tente novamente.",
+        variant: "destructive"
+      });
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
+      <div className="flex items-center gap-4">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => navigate('/')}
+          className="flex items-center gap-2"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          Voltar ao Dashboard
+        </Button>
+      </div>
+      
       <div>
         <h1 className="text-3xl font-bold">Configurações</h1>
         <p className="text-muted-foreground mt-2">
@@ -253,11 +354,18 @@ export default function Settings() {
 
       {/* Botões de Ação */}
       <div className="flex gap-4 justify-end">
-        <Button variant="outline" onClick={testConnection}>
-          Testar Conexões
+        <Button 
+          variant="outline" 
+          onClick={testConnection}
+          disabled={loading}
+        >
+          {loading ? "Testando..." : "Testar Conexões"}
         </Button>
-        <Button onClick={handleSave}>
-          Salvar Configurações
+        <Button 
+          onClick={handleSave}
+          disabled={loading}
+        >
+          {loading ? "Salvando..." : "Salvar Configurações"}
         </Button>
       </div>
     </div>
